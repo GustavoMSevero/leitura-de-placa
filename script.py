@@ -2,6 +2,8 @@ import cv2
 import pytesseract
 import re
 import numpy as np
+import sys
+import os
 
 # Configurar o caminho para o executável do Tesseract, se necessário
 pytesseract.pytesseract.tesseract_cmd = r'/opt/homebrew/bin/tesseract'  # Windows
@@ -54,14 +56,36 @@ def extract_plate_text(plate_img):
     # Limpar o texto extraído
     text = text.strip().replace(" ", "").upper()
     
-    # Validar formato da placa (padrão brasileiro: ABC-1234 ou ABC4D56)
-    plate_pattern = r'^[A-Z]{3}-?\d{1}[A-Z0-9]{1}\d{2}$'
+    # Validar formato da placa (padrão brasileiro: ABC1234 ou ABC4D56)
+    plate_pattern = r'^[A-Z]{3}\d{1}[A-Z0-9]{1}\d{2}$'
     if re.match(plate_pattern, text):
-        # Adicionar hífen se não estiver presente
-        if '-' not in text:
-            text = text[:3] + '-' + text[3:]
-        return text
+        # Verificar se é formato ABC4D56 (Mercosul, com letra na 5ª posição)
+        if len(text) == 7 and text[4].isalpha():
+            return text  # Não adiciona hífen para ABC4D56
+        else:
+            # Adicionar hífen para ABC-1234
+            return text[:3] + '-' + text[3:]
     return None
+
+def validate_manual_plate(text):
+    # Limpar e formatar o texto inserido
+    text = text.strip().replace(" ", "").replace("-", "").upper()
+    
+    # Validar formato da placa (padrão brasileiro: ABC1234 ou ABC4D56)
+    plate_pattern = r'^[A-Z]{3}\d{1}[A-Z0-9]{1}\d{2}$'
+    if re.match(plate_pattern, text):
+        # Verificar se é formato ABC4D56 (Mercosul, com letra na 5ª posição)
+        if len(text) == 7 and text[4].isalpha():
+            return text  # Não adiciona hífen para ABC4D56
+        else:
+            # Adicionar hífen para ABC-1234
+            return text[:3] + '-' + text[3:]
+    return None
+
+def get_manual_input():
+    print("\nDigite a placa (ex: ABC1234 ou ABC4D56) e pressione Enter:")
+    plate_input = input()
+    return validate_manual_plate(plate_input)
 
 def test_camera_indices(max_index=5):
     """Testa diferentes índices de câmera para encontrar uma webcam funcional."""
@@ -81,7 +105,7 @@ def main():
         return
 
     # Iniciar captura da webcam com o índice encontrado
-    cap = cv2.VideoCapture(1)
+    cap = cv2.VideoCapture(camera_index)
     
     if not cap.isOpened():
         print(f"Erro: Não foi possível acessar a webcam no índice {camera_index}.")
@@ -125,9 +149,18 @@ def main():
         # Exibir o frame com o resultado
         cv2.imshow('Webcam - Detecção de Placa', display_frame)
 
-        # Sair ao pressionar 'q'
-        if cv2.waitKey(1) & 0xFF == ord('q'):
+        # Verificar tecla pressionada
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord('q'):
             break
+        elif key == ord('m'):
+            # Pausar captura e solicitar entrada manual
+            plate_text = get_manual_input()
+            if plate_text:
+                print(f"Placa inserida manualmente: {plate_text}")
+                last_plate = plate_text
+            else:
+                print("Placa inválida. Use o formato ABC1234 ou ABC4D56.")
 
     # Liberar recursos
     cap.release()
